@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mood-Based YouTube Recommender</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0f0f0f;
+      color: #fff;
+      font-family: 'Segoe UI', sans-serif;
+      scroll-snap-type: y mandatory;
+      overflow-y: scroll;
+    }
+
+    header {
+      background: #1a1a1a;
+      padding: 15px;
+      text-align: center;
+    }
+
+    h1 { font-size: 24px; margin-bottom: 10px; }
+
+    .controls, #search-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    button, input[type="text"] {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 20px;
+      background: #333;
+      color: white;
+      cursor: pointer;
+    }
+
+    input[type="text"] {
+      width: 200px;
+    }
+
+    .switch-wrapper {
+      display: flex;
+      justify-content: center;
+      margin: 10px 0;
+      gap: 15px;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 60px;
+      height: 30px;
+    }
+
+    .switch input { display: none; }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0;
+      right: 0; bottom: 0;
+      background-color: #444;
+      transition: .4s;
+      border-radius: 30px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 22px;
+      width: 22px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+
+    .switch input:checked + .slider {
+      background-color: #00bfff;
+    }
+
+    .switch input:checked + .slider:before {
+      transform: translateX(30px);
+    }
+
+    .video-container {
+      height: 100vh;
+      scroll-snap-align: start;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+
+    .video-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .loader {
+      width: 40px;
+      height: 40px;
+      border: 4px solid white;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      position: absolute;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    footer {
+      text-align: center;
+      padding: 10px;
+      background: #1a1a1a;
+      font-size: 14px;
+      color: #ccc;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🎬 Mood-Based YouTube Recommender</h1>
+    <div class="controls" id="mood-controls">
+      <button onclick="setMood('funny')">😂 Fun</button>
+      <button onclick="setMood('sad')">😢 Sad</button>
+      <button onclick="setMood('bored')">😐 Bored</button>
+      <button onclick="setMood('motivational')">💪 Motivation</button>
+      <button onclick="setMood('music')">🎵 Music</button>
+    </div>
+
+    <div class="controls">
+      <input type="text" id="searchInput" placeholder="Search..." onkeypress="handleSearch(event)" />
+    </div>
+
+    <div class="switch-wrapper">
+      <label>Shorts</label>
+      <label class="switch">
+        <input type="checkbox" id="typeToggle">
+        <span class="slider"></span>
+      </label>
+      <label>Long</label>
+
+      <label style="margin-left: 30px;">🇮🇳</label>
+      <label class="switch">
+        <input type="checkbox" id="regionToggle">
+        <span class="slider"></span>
+      </label>
+      <label>🌍</label>
+    </div>
+  </header>
+
+  <div id="results"></div>
+  <footer>Developed by Shubham</footer>
+
+  <script>
+    const apiKey = 'AIzaSyAjHZ6j6mXrICQszo-22FWP4b8sCXStoQU'; // Replace this
+    let mood = 'funny';
+    let nextPageToken = '';
+    let players = [];
+
+    function setMood(newMood) {
+      mood = newMood;
+      nextPageToken = '';
+      document.getElementById('results').innerHTML = '';
+      players = [];
+      fetchVideos();
+    }
+
+    function handleSearch(e) {
+      if (e.key === 'Enter') {
+        mood = document.getElementById('searchInput').value;
+        document.getElementById('results').innerHTML = '';
+        players = [];
+        fetchVideos();
+      }
+    }
+
+    function createPlayer(videoId) {
+      const container = document.createElement('div');
+      container.className = 'video-container';
+      container.innerHTML = `
+        <div class="loader"></div>
+        <div id="player-${videoId}"></div>
+      `;
+      document.getElementById('results').appendChild(container);
+
+      const player = new YT.Player(`player-${videoId}`, {
+        height: '100%',
+        width: '100%',
+        videoId: videoId,
+        playerVars: { 'playsinline': 1, 'autoplay': 0, 'rel': 0 },
+        events: {
+          'onReady': () => {
+            container.querySelector('.loader').style.display = 'none';
+            setupScrollObserver();
+          }
+        }
+      });
+
+      players.push({ id: `player-${videoId}`, player });
+    }
+
+    async function fetchVideos() {
+      const type = document.getElementById('typeToggle').checked ? 'long' : 'short';
+      const region = document.getElementById('regionToggle').checked ? '' : 'India';
+      const q = `${mood} youtube ${type === 'short' ? 'shorts' : 'video'} ${region}`;
+      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=6&q=${encodeURIComponent(q)}&videoDuration=${type}&key=${apiKey}`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+      nextPageToken = data.nextPageToken;
+
+      data.items.forEach(item => {
+        createPlayer(item.id.videoId);
+      });
+    }
+
+    function setupScrollObserver() {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          const id = entry.target.querySelector('div').id;
+          const playerObj = players.find(p => p.id === id);
+          if (entry.isIntersecting) {
+            pauseAll();
+            playerObj?.player.playVideo();
+          } else {
+            playerObj?.player.pauseVideo();
+          }
+        });
+      }, { threshold: 0.75 });
+
+      document.querySelectorAll('.video-container').forEach(container => {
+        observer.observe(container);
+      });
+    }
+
+    function pauseAll() {
+      players.forEach(p => p.player.pauseVideo());
+    }
+
+    function onYouTubeIframeAPIReady() {
+      fetchVideos();
+    }
+
+    const tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.body.appendChild(tag);
+
+    window.addEventListener('scroll', () => {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 300) {
+        fetchVideos();
+      }
+    });
+  </script>
+</body>
+</html>
